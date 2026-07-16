@@ -384,17 +384,50 @@ function showTab(tab) {
   if (tab === 'standings') renderStandings();
 }
 
-function addCouple() {
-  if (state.generated) return;
-  const p1 = document.getElementById('p1').value.trim();
-  const p2 = document.getElementById('p2').value.trim();
-  if (!p1 || !p2) { document.getElementById('p1').focus(); return; }
-  if (state.couples.length >= 8) return;
-  state.couples.push({ p1, p2, id: Date.now() });
-  document.getElementById('p1').value = '';
-  document.getElementById('p2').value = '';
-  save();
-  renderTeams();
+Thought for 5sThought for 5sSubject: Check-In Desk Details – Your Charter Flight to Campbeltown
+Hi all,
+A quick update ahead of your flight — check-in desks will be in Zone H, desks 42–45 at Gatwick.
+We'd recommend heading there in good time to get settled before boarding. See you soon!
+Best,
+
+The Vintage Whisky Club teamLoad later messagesYou said: Hi you put together a github page for me for a couples padel league.Hi you put together a github page for me for a couples padel league.  How do i add another couple to it4:55 PMClaude responded: I don't have the specifics of that page in front of me (it doesn't look like there's a saved link or repo name I can pull up), so let me not guess at instructi…Acknowledged missing project details; sought repository link for guidanceAcknowledged missing project details; sought repository link for guidanceI don't have the specifics of that page in front of me (it doesn't look like there's a saved link or repo name I can pull up), so let me not guess at instructions that might not match how it's actually built. Could you share the link to the GitHub repo or page? Once I can see it, I can give you exact steps for adding a couple — it'll depend on whether it's a data file (like a JSON/CSV list) you edit directly, or a form/admin page built into the site.You said: where do i find that in githubwhere do i find that in github4:57 PMClaude responded: A few ways to track it down:Charted navigation pathways to locate GitHub repositoriesCharted navigation pathways to locate GitHub repositoriesA few ways to track it down:
+
+Go to github.com and log in (use whichever account you used when this was set up — you mentioned it's under the "VintageWhiskyClub" account/name).
+Click your profile picture (top right) → Your repositories — this lists every repo you have access to. Look for something like "padel-league" or similar.
+If it's under an organization rather than your personal account, click your profile picture → you should see "VintageWhiskyClub" listed under your organizations in the left sidebar — click into that, then Repositories tab.
+If you're not sure of the exact name, use the search bar at the top of GitHub and type "padel" — it'll search repos you have access to.
+
+Once you're in the right repo, if you paste me the URL from your browser's address bar, I can look at exactly how it's structured and tell you precisely where to add the new couple (whether that's editing a data file, a form, or something else).You said: https://github.https://github.com/VintageWhiskyClub/padel-league5:13 PMAnalyzed app architecture and identified fixture generation as key blockerAnalyzed app architecture and identified fixture generation as key blockerYou said: Q: Have you already generated the fixtures/schedule for this league?Q: Have you already generated the fixtures/schedule for this league?
+A: Yes, fixtures are already generated5:14 PMClaude responded: Ah — that changes things.Architected solution enabling couple additions post-fixture generationArchitected solution enabling couple additions post-fixture generationAh — that changes things. Right now the page is built so that once fixtures are generated, the team list locks and the "Add a couple" button silently does nothing (it's a deliberate safeguard so a new team can't accidentally reshuffle a schedule that's already had results recorded against it).
+So there isn't currently a way to add a couple after fixtures exist without wiping everything via "Reset entire league" — which would lose your recorded scores too.
+The fix is a small code change: let a new couple be added after fixtures are generated, and automatically create new fixtures pairing them against everyone already in the league, while leaving all your existing results untouched. I've written that change — here's exactly what to do:
+
+Go to https://github.com/VintageWhiskyClub/padel-league/blob/main/index.html
+Click the pencil icon (top right of the file, "Edit this file") — sign in if prompted.
+Use Ctrl+F / Cmd+F in your browser to find this block:
+
+
+
+jsfunction addCouple() {
+const p1 = document.getElementById('p1').value.trim();
+const p2 = document.getElementById('p2').value.trim();
+if (!p1 || !p2) { document.getElementById('p1').focus(); return; }
+if (state.couples.length >= 8) return;
+const newCouple = { p1, p2, id: Date.now() };
+state.couples.push(newCouple);
+if (state.generated) {
+let nextId = state.fixtures.length ? Math.max(...state.fixtures.map(f => f.id)) + 1 : 0;
+state.couples.forEach(c => {
+if (c.id !== newCouple.id) {
+state.fixtures.push({ id: nextId++, homeId: c.id, awayId: newCouple.id, homeScore: null, awayScore: null });
+}
+});
+}
+document.getElementById('p1').value = '';
+document.getElementById('p2').value = '';
+save();
+renderTeams();
+if (state.generated) renderFixtures();
 }
 
 function removeCouple(id) {
