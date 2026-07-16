@@ -461,4 +461,221 @@ setStatus(state.generated ? state.couples.length + ' teams' : 'Setup');
 }
 
 async function generateFixtures() {
-if (state.couples.length < 2 ||
+if (state.couples.length < 2 || state.generated) return;
+setStatus('Saving…');
+try {
+state = await fetchState();
+if (state.generated) { renderTeams(); return; }
+state.fixtures = [];
+let id = 0;
+for (let i = 0; i < state.couples.length; i++) {
+for (let j = i + 1; j < state.couples.length; j++) {
+state.fixtures.push({
+id: id++,
+homeId: state.couples[i].id,
+awayId: state.couples[j].id,
+homeScore: null,
+awayScore: null
+});
+}
+}
+state.generated = true;
+await pushState(state);
+clearSyncNotice();
+renderTeams();
+showTab('fixtures');
+} catch (e) {
+showSyncError("Couldn't generate fixtures. Try again.");
+} finally {
+setStatus(state.generated ? state.couples.length + ' teams' : 'Setup');
+}
+}
+
+function groupIntoRounds(fixtures) {
+const remaining = [...fixtures];
+const rounds = [];
+while (remaining.length > 0) {
+const round = [];
+const used = new Set();
+const leftover = [];
+for (const f of remaining) {
+if (!used.has(f.homeId) && !used.has(f.awayId)) {
+round.push(f);
+used.add(f.homeId);
+used.add(f.awayId);
+} else {
+leftover.push(f);
+}
+}
+rounds.push(round);
+if (leftover.length === remaining.length) { rounds[rounds.length-1].push(...leftover); break; }
+remaining.splice(0, remaining.length, ...leftover);
+}
+return rounds;
+}
+
+function getCouple(id) { return state.couples.find(c => c.id === id); }
+
+function renderFixtures() {
+const el = document.getElementById('fixtures-content');
+if (!state.generated || state.fixtures.length === 0) {
+el.innerHTML = '<div class="empty-state">⚡️<p>Generate fixtures first from the Teams tab.</p></div>';
+return;
+}
+const rounds = groupIntoRounds(state.fixtures);
+let html = '';
+rounds.forEach((round, ri) => {
+html += `<div class="round-label">Round ${ri + 1}</div>`;
+round.forEach(f => {
+const home = getCouple(f.homeId);
+const away = getCouple(f.awayId);
+if (!home || !away) return;
+const played = f.homeScore !== null;
+if (played) {
+const hw = f.homeScore > f.awayScore, aw = f.awayScore > f.homeScore;
+html += `<div class="fixture-card played">
+<div class="fixture-teams">
+<div class="fixture-team">${home.p1} &amp; ${home.p2}</div>
+<div class="fixture-vs">vs</div>
+<div class="fixture-team right">${away.p1} &amp; ${away.p2}</div>
+</div>
+<div class="score-row">
+<div class="score-val ${hw?'winner':aw?'loser':''}">${f.homeScore}</div>
+<div class="score-dash">—</div>
+<div class="score-val ${aw?'winner':hw?'loser':''}">${f.awayScore}</div>
+</div>
+<div class="save-row">
+<button class="btn btn-sm" onclick="editScore(${f.id})">Edit</button>
+</div>
+</div>`;
+} else {
+html += `<div class="fixture-card" id="fix-${f.id}">
+<div class="fixture-teams">
+<div class="fixture-team">${home.p1} &amp; ${home.p2}</div>
+<div class="fixture-vs">vs</div>
+<div class="fixture-team right">${away.p1} &amp; ${away.p2}</div>
+</div>
+<div class="score-row">
+<input type="number" min="0" max="99" id="hs-${f.id}" placeholder="0" inputmode="numeric" />
+<div class="score-dash">—</div>
+<input type="number" min="0" max="99" id="as-${f.id}" placeholder="0" inputmode="numeric" />
+</div>
+<div class="save-row">
+<button class="btn btn-sm btn-gold" onclick="saveScore(${f.id})">Save result</button>
+</div>
+</div>`;
+}
+});
+});
+el.innerHTML = html;
+}
+
+async function saveScore(id) {
+const hs = parseInt(document.getElementById('hs-'+id)?.value);
+const as = parseInt(document.getElementById('as-'+id)?.value);
+if (isNaN(hs) || isNaN(as)) return;
+setStatus('Saving…');
+try {
+state = await fetchState();
+const f = state.fixtures.find(x => x.id === id);
+if (!f) { renderFixtures(); return; }
+f.homeScore = hs;
+f.awayScore = as;
+await pushState(state);
+clearSyncNotice();
+renderFixtures();
+} catch (e) {
+showSyncError("Couldn't save that score. Try again.");
+} finally {
+setStatus(state.generated ? state.couples.length + ' teams' : 'Setup');
+}
+}
+
+async function editScore(id) {
+setStatus('Saving…');
+try {
+state = await fetchState();
+const f = state.fixtures.find(x => x.id === id);
+if (f) { f.homeScore = null; f.awayScore = null; }
+await pushState(state);
+clearSyncNotice();
+renderFixtures();
+} catch (e) {
+showSyncError("Couldn't update that. Try again.");
+} finally {
+setStatus(state.generated ? state.couples.length + ' teams' : 'Setup');
+}
+}
+
+function renderStandings() {
+const el = document.getElementById('standings-content');
+if (!state.generated || state.couples.length === 0) {
+el.innerHTML = '<div class="empty-state">📊<p>Add teams and generate fixtures first.</p></div>';
+return;
+}
+const stats = {};
+state.couples.forEach(c => {
+stats[c.id] = { name: c.p1 + ' & ' + c.p2, p:0, w:0, l:0, d:0, gf:0, ga:0, pts:0 };
+});
+state.fixtures.forEach(f => {
+if (f.homeScore === null) return;
+const h = stats[f.homeId], a = stats[f.awayId];
+if (!h || !a) return;
+h.p++; a.p++;
+h.gf += f.homeScore; h.ga += f.awayScore;
+a.gf += f.awayScore; a.ga += f.homeScore;
+if (f.homeScore > f.awayScore) { h.w++; h.pts+=3; a.l++; }
+else if (f.awayScore > f.homeScore) { a.w++; a.pts+=3; h.l++; }
+else { h.d++; h.pts++; a.d++; a.pts++; }
+});
+const rows = Object.values(stats).sort((a,b) => b.pts - a.pts || (b.gf-b.ga)-(a.gf-a.ga) || b.gf-a.gf);
+const played = state.fixtures.filter(f => f.homeScore !== null).length;
+const total = state.fixtures.length;
+el.innerHTML = `
+<div class="notice">📊 ${played} of ${total} fixtures played</div>
+<div class="card" style="padding:0 1.25rem;">
+<table class="standings-table">
+<thead>
+<tr>
+<th style="text-align:center;width:36px;">#</th>
+<th>Team</th>
+<th>P</th><th>W</th><th>L</th>
+<th>GF</th><th>GA</th>
+<th>Pts</th>
+</tr>
+</thead>
+<tbody>
+${rows.map((r, i) => {
+const pos = i < 3 ? `<span class="pos-badge pos-${i+1}">${i+1}</span>` : `<span style="color:var(--text-muted);font-size:13px;">${i+1}</span>`;
+return `<tr>
+<td>${pos}</td>
+<td>${r.name}</td>
+<td>${r.p}</td><td>${r.w}</td><td>${r.l}</td>
+<td>${r.gf}</td><td>${r.ga}</td>
+<td class="pts-cell">${r.pts}</td>
+</tr>`;
+}).join('')}
+</tbody>
+</table>
+</div>`;
+}
+
+async function resetLeague() {
+if (!confirm('Reset the entire league? All scores and fixtures will be lost.')) return;
+setStatus('Saving…');
+try {
+state = { couples: [], fixtures: [], generated: false };
+await pushState(state);
+clearSyncNotice();
+renderTeams();
+showTab('teams');
+} catch (e) {
+showSyncError("Couldn't reset the league. Try again.");
+}
+}
+
+// Initial load
+refreshNow();
+</script>
+</body>
+</html>
